@@ -30,6 +30,7 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--surf2);c
 .stat-card .lbl{font-size:10px;color:var(--muted);margin-top:3px}
 #legend-list{display:flex;flex-direction:column;gap:5px}
 .leg-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+.leg-item:hover{background:var(--surf2);border-color:var(--border)}
 .leg-item.faded{opacity:.35}
 .leg-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
 .leg-name{flex:1;font-size:12px;font-weight:500}
@@ -39,10 +40,6 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--surf2);c
 #unmatched-box .warn-title{font-size:11px;font-weight:600;color:#92400e;margin-bottom:5px}
 #unmatched-box ul{padding-left:14px}
 #unmatched-box li{font-size:11px;color:#78350f;margin:2px 0}
-/* DEBUG BOX */
-#debug-box{background:#eff6ff;border:1px solid #93c5fd;border-radius:var(--r);padding:10px 12px;margin-top:10px;display:none}
-#debug-box .dtitle{font-size:11px;font-weight:600;color:#1e40af;margin-bottom:5px}
-#debug-out{font-size:10px;font-family:'DM Mono',monospace;color:#1e3a8a;white-space:pre-wrap;word-break:break-all;max-height:220px;overflow-y:auto}
 #drop-zone{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:32px;border:2px dashed var(--border);border-radius:16px;margin:20px;background:var(--surf2);cursor:pointer}
 #drop-zone h2{font-size:15px;font-weight:500;color:var(--muted);text-align:center}
 #drop-zone p{font-size:12px;color:#94a3b8;text-align:center;line-height:1.6}
@@ -105,10 +102,6 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--surf2);c
           <div class="warn-title">Wilayah tidak ditemukan</div>
           <ul id="unmatched-list"></ul>
         </div>
-        <div id="debug-box">
-          <div class="dtitle">GeoJSON kabupaten values (screenshot ini &amp; kirim ke Claude):</div>
-          <pre id="debug-out"></pre>
-        </div>
       </div>
     </div>
   </div>
@@ -132,7 +125,6 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--surf2);c
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 var TILES={
   light:{url:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',sub:'abcd',op:.72},
@@ -141,45 +133,58 @@ var TILES={
 };
 var ATTR='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>';
 var PALETTE=['#e6194b','#3cb44b','#4363d8','#f58231','#911eb4','#08b0a0','#f032e6','#9A6324','#0080ff','#e6ac00'];
-var GEO_URLS=[
-  'https://cdn.jsdelivr.net/gh/pararawendy/border-desa-indonesia-geojson@master/indonesia_villages_border.geojson.zip',
-  'https://raw.githubusercontent.com/pararawendy/border-desa-indonesia-geojson/master/indonesia_villages_border.geojson.zip'
+
+// BIG (Badan Informasi Geospasial) official Indonesia kabupaten/kota GeoJSON
+// namobj field = full Indonesian name e.g. "Kota Tangerang Selatan", "Kabupaten Bogor"
+// Paginated: 1000 features per page, ~514 total → 1 request covers all
+var GEO_URL = 'https://geoservices.big.go.id/rbi/rest/services/BATASWILAYAH/BATAS_WILAYAH/MapServer/13/query?where=1%3D1&outFields=namobj,REMARK&returnGeometry=true&f=geojson&resultRecordCount=600';
+// jsdelivr CDN fallback (rifani repo has namobj-style names)
+var GEO_FALLBACKS = [
+  'https://cdn.jsdelivr.net/gh/rifani/geojson-political-indonesia@master/IDN_2_REGENCYANDCITY.geojson',
+  'https://raw.githubusercontent.com/rifani/geojson-political-indonesia/master/IDN_2_REGENCYANDCITY.geojson'
 ];
 
 var map,tileLayer,geojsonLayer,geoData;
 var currentTile='light',salesGroups=[],districtLookup={},hiddenGroups=new Set();
-var debugSample={}; // will store unique kabupaten values we encounter
 
-// ── Normalise ─────────────────────────────────────────────────────────────────
+// ── Normalisation ─────────────────────────────────────────────────────────────
 function norm(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
-function strip(s){ return norm(s).replace(/^(KOTAMADYA|KOTA MADYA|KABUPATEN|KOTA|KAB)\s+/,'').trim(); }
-function allVariants(s){
-  var u=norm(s), st=strip(s);
-  return [u, st, 'KOTA '+st, 'KABUPATEN '+st, 'KAB '+st].filter(function(v,i,a){return v&&a.indexOf(v)===i;});
-}
+function strip(s){ return norm(s).replace(/^(KOTAMADYA|KOTA MADYA|KABUPATEN|KOTA|KAB\.?)\s+/,'').trim(); }
 
-// Build lookup from Excel names — store under every possible normalised variant
+// Build lookup from Excel — store each area under many possible key variants
 function buildLookup(groups){
   districtLookup={};
   groups.forEach(function(g){
     g.areas.forEach(function(area){
       var entry={salesperson:g.name,homebase:g.homebase,color:g.color,originalName:area,matched:false};
-      allVariants(area).forEach(function(k){districtLookup[k]=entry;});
+      var u=norm(area), s=strip(area);
+      // All variants:
+      [u, s,
+       'KOTA '+s, 'KABUPATEN '+s, 'KAB '+s,
+       // Also without normalisation (for exact match)
+       area.toUpperCase().trim()
+      ].filter(function(v,i,a){return v&&a.indexOf(v)===i;})
+       .forEach(function(k){districtLookup[k]=entry;});
     });
   });
 }
 
-// Match GeoJSON kabupaten value against lookup
-// Tries the raw value AND all its normalised variants
-function lookupKab(raw){
+// Match a raw GeoJSON name → entry
+// The BIG API uses: "Kota Tangerang Selatan", "Kabupaten Bogor" etc.
+function lookupName(raw){
   if(!raw) return null;
-  var tries=allVariants(raw);
-  // also try the raw string as-is (case sensitive sometimes matters)
-  tries.unshift(raw);
+  var u=norm(raw);
+  var s=strip(raw);
+  var tries=[raw.toUpperCase().trim(), u, s, 'KOTA '+s, 'KABUPATEN '+s];
   for(var i=0;i<tries.length;i++){
     if(districtLookup[tries[i]]) return districtLookup[tries[i]];
   }
   return null;
+}
+
+// Get name from feature — try all known property keys
+function getFeatureName(props){
+  return props.namobj||props.NAMOBJ||props.name||props.NAME||props.NAME_2||props.Kab_Kota||null;
 }
 
 // ── Excel ─────────────────────────────────────────────────────────────────────
@@ -241,85 +246,65 @@ function initMap(){
 }
 
 function fetchGeoJSON(){
-  setLoading(true,'Mengunduh data wilayah (~30MB)...','Pertama kali membutuhkan ~30 detik');
-  showProgress(0);
+  setLoading(true,'Memuat data wilayah dari BIG (Badan Informasi Geospasial)...','');
+  showProgress(20);
+
+  // Try BIG API first, then fallbacks
+  var allUrls=[GEO_URL].concat(GEO_FALLBACKS);
   var idx=0;
+
   function tryNext(){
-    if(idx>=GEO_URLS.length){setLoading(false);document.getElementById('map-pill').innerHTML='<span style="color:red">Gagal download GeoJSON</span>';return;}
-    var url=GEO_URLS[idx++];
-    var xhr=new XMLHttpRequest();
-    xhr.open('GET',url,true); xhr.responseType='arraybuffer';
-    xhr.onprogress=function(e){if(e.lengthComputable) showProgress(Math.round(e.loaded/e.total*60));};
-    xhr.onload=function(){
-      if(xhr.status!==200){tryNext();return;}
-      setLoading(true,'Mengekstrak ZIP...',''); showProgress(65);
-      JSZip.loadAsync(xhr.response).then(function(zip){
-        var fname=Object.keys(zip.files).find(function(n){return n.endsWith('.geojson');});
-        if(!fname){tryNext();return;}
-        showProgress(75); setLoading(true,'Memproses GeoJSON...','');
-        return zip.files[fname].async('string');
-      }).then(function(txt){
-        showProgress(90);
-        setTimeout(function(){
-          geoData=JSON.parse(txt);
-          showProgress(100);
-          setTimeout(renderGeoJSON,100);
-        },50);
-      }).catch(function(){tryNext();});
-    };
-    xhr.onerror=function(){tryNext();}; xhr.send();
+    if(idx>=allUrls.length){
+      setLoading(false);
+      document.getElementById('map-pill').innerHTML='<span style="color:#ef4444">Gagal memuat semua sumber GeoJSON.</span>';
+      return;
+    }
+    var url=allUrls[idx++];
+    setLoading(true,'Mencoba sumber '+(idx)+'/'+allUrls.length+'...','');
+    showProgress(idx*20);
+    fetch(url)
+      .then(function(r){if(!r.ok) throw new Error('HTTP '+r.status); return r.json();})
+      .then(function(data){
+        var features=data.features||[];
+        if(!features.length) throw new Error('empty');
+        // Validate: check if features have name properties
+        var sample=features[0]&&features[0].properties?features[0].properties:{};
+        var hasName=!!(sample.namobj||sample.NAMOBJ||sample.name||sample.NAME||sample.NAME_2||sample.Kab_Kota);
+        if(!hasName) throw new Error('no name property');
+        geoData=data;
+        console.log('Loaded from:', url, '| features:', features.length, '| sample props:', JSON.stringify(sample));
+        showProgress(100);
+        setTimeout(renderGeoJSON,100);
+      })
+      .catch(function(e){
+        console.warn('Failed:',url,e.message);
+        tryNext();
+      });
   }
   tryNext();
 }
 
-// Get ALL property keys from a feature — we'll try every string property as kabupaten
-function getAllStringProps(props){
-  var out={};
-  Object.keys(props).forEach(function(k){
-    if(typeof props[k]==='string'&&props[k].trim()) out[k]=props[k].trim();
-  });
-  return out;
-}
-
 function styleFeature(feature){
-  var props=feature.properties||{};
-  var row=matchFeature(props);
+  var name=getFeatureName(feature.properties||{});
+  var row=lookupName(name);
   var hidden=row&&hiddenGroups.has(row.salesperson);
   return{
     fillColor:(row&&!hidden)?row.color:'#cccccc',
-    fillOpacity:(row&&!hidden)?TILES[currentTile].op:.06,
-    color:(row&&!hidden)?'#555':'#ccc',
-    weight:(row&&!hidden)?.5:.1
+    fillOpacity:(row&&!hidden)?TILES[currentTile].op:.08,
+    color:'#888', weight:(row&&!hidden)?.8:.2
   };
-}
-
-// Try EVERY string property in the feature against our lookup
-// Also collect unique values for the debug panel
-function matchFeature(props){
-  var strProps=getAllStringProps(props);
-  // collect for debug (only store unique kabupaten-like values)
-  Object.keys(strProps).forEach(function(k){
-    var v=strProps[k];
-    if(!debugSample[v]) debugSample[v]=k; // value → key
-  });
-  // Try each property value
-  var keys=Object.keys(strProps);
-  for(var i=0;i<keys.length;i++){
-    var row=lookupKab(strProps[keys[i]]);
-    if(row) return row;
-  }
-  return null;
 }
 
 function onEachFeature(feature,layer){
   var props=feature.properties||{};
-  var row=matchFeature(props);
+  var name=getFeatureName(props);
+  var row=lookupName(name);
   if(row){
     row.matched=true;
     layer.bindPopup(
-      '<div class="popup-name">'+(props.kabupaten||props.district||'')+'</div>'+
+      '<div class="popup-name">'+(name||'')+'</div>'+
       '<div class="popup-row">Salesperson: <b>'+row.salesperson+'</b></div>'+
-      (props.provinsi?'<div class="popup-row">Provinsi: <b>'+props.provinsi+'</b></div>':'')+
+      (props.REMARK||props.provinsi?'<div class="popup-row">Provinsi: <b>'+(props.REMARK||props.provinsi)+'</b></div>':'')+
       (row.homebase?'<div class="popup-row" style="font-size:10px;color:#94a3b8">Homebase: '+row.homebase+'</div>':'')+
       '<span class="popup-badge" style="background:'+row.color+'">'+row.salesperson+'</span>',
       {maxWidth:240}
@@ -328,7 +313,7 @@ function onEachFeature(feature,layer){
   layer.on({
     mouseover:function(e){
       if(row&&hiddenGroups.has(row.salesperson)) return;
-      e.target.setStyle({weight:row?1.8:.2,color:'#111',fillOpacity:row?.90:.12});
+      e.target.setStyle({weight:row?2:.3,color:'#111',fillOpacity:row?.90:.15});
       if(!L.Browser.ie&&!L.Browser.opera&&!L.Browser.edge) e.target.bringToFront();
     },
     mouseout:function(e){geojsonLayer.resetStyle(e.target);}
@@ -337,7 +322,6 @@ function onEachFeature(feature,layer){
 
 function renderGeoJSON(){
   setLoading(true,'Merender peta...','');
-  debugSample={}; // reset
   setTimeout(function(){
     if(geojsonLayer){map.removeLayer(geojsonLayer);geojsonLayer=null;}
     geojsonLayer=L.geoJSON(geoData,{style:styleFeature,onEachFeature:onEachFeature}).addTo(map);
@@ -385,39 +369,7 @@ function updateSidebar(){
     unmatched.forEach(function(r){
       var li=document.createElement('li'); li.textContent=r.originalName+' ('+r.salesperson+')'; ul.appendChild(li);
     });
-
-    // Show debug: find GeoJSON values that partially match unmatched area names
-    var wantWords=[];
-    unmatched.forEach(function(r){
-      var words=r.originalName.toUpperCase().replace(/[^A-Z\s]/g,' ').split(' ');
-      words.forEach(function(w){if(w.length>3) wantWords.push(w);});
-    });
-    wantWords=[...new Set(wantWords)];
-
-    var hits=[];
-    Object.keys(debugSample).forEach(function(val){
-      var up=val.toUpperCase();
-      if(wantWords.some(function(w){return up.indexOf(w)>=0;})){
-        hits.push('"'+val+'" [key: '+debugSample[val]+']');
-      }
-    });
-
-    // Also show first 5 features raw props for inspection
-    var rawSample='--- First 3 features raw properties ---\n';
-    if(geoData&&geoData.features){
-      geoData.features.slice(0,3).forEach(function(f,i){
-        rawSample+='['+i+']: '+JSON.stringify(f.properties)+'\n';
-      });
-    }
-
-    var db=document.getElementById('debug-box');
-    var dp=document.getElementById('debug-out');
-    db.style.display='block';
-    dp.textContent=(hits.length?'GeoJSON values matching your areas:\n'+hits.join('\n')+'\n\n':'')+rawSample;
-  }else{
-    ub.style.display='none';
-    document.getElementById('debug-box').style.display='none';
-  }
+  }else{ub.style.display='none';}
 }
 
 function toggleGroup(name){
