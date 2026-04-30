@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--navy:#0f1f3d;--navy2:#1a3260;--accent:#3b82f6;--accent2:#60a5fa;--surf:#fff;--surf2:#f4f6fb;--border:#e2e8f0;--text:#1e293b;--muted:#64748b;--success:#22c55e;--danger:#ef4444;--warn:#f59e0b;--r:10px}
+:root{--navy:#0f1f3d;--navy2:#1a3260;--accent:#3b82f6;--accent2:#60a5fa;--surf:#fff;--surf2:#f4f6fb;--border:#e2e8f0;--text:#1e293b;--muted:#64748b;--success:#22c55e;--danger:#ef4444;--r:10px}
 html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--surf2);color:var(--text)}
 #header{height:56px;background:var(--navy);display:flex;align-items:center;padding:0 20px;gap:14px;position:relative;z-index:1100;box-shadow:0 2px 12px rgba(0,0,0,.25)}
 #header-logo{width:32px;height:32px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0}
@@ -69,7 +69,6 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--surf2);c
 </style>
 </head>
 <body>
-
 <div id="header">
   <div id="header-logo">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -91,7 +90,6 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--surf2);c
   </button>
   <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
 </div>
-
 <div id="main">
   <div id="sidebar">
     <div id="sidebar-inner">
@@ -116,7 +114,6 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--surf2);c
       </div>
     </div>
   </div>
-
   <div id="drop-zone" onclick="document.getElementById('file-input').click()">
     <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
@@ -127,7 +124,6 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--surf2);c
     <button id="drop-zone-btn">Pilih File Excel</button>
     <p style="margin-top:4px;font-size:11px">atau drag &amp; drop file ke sini</p>
   </div>
-
   <div id="map-wrap">
     <div id="map"></div>
     <div id="map-pill">Memuat peta...</div>
@@ -139,7 +135,6 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--surf2);c
     </div>
   </div>
 </div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -152,44 +147,161 @@ var TILES={
 var ATTR='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>';
 var PALETTE=['#e6194b','#3cb44b','#4363d8','#f58231','#911eb4','#08b0a0','#f032e6','#9A6324','#0080ff','#e6ac00'];
 
-// GeoJSON source — pararawendy repo via jsdelivr (auto-serves from GitHub)
-// File is a ZIP, we unzip in browser using JSZip
-var GEO_ZIP_URL='https://cdn.jsdelivr.net/gh/pararawendy/border-desa-indonesia-geojson@master/indonesia_villages_border.geojson.zip';
-// Fallback: raw github
-var GEO_ZIP_FALLBACK='https://raw.githubusercontent.com/pararawendy/border-desa-indonesia-geojson/master/indonesia_villages_border.geojson.zip';
+var GEO_URLS=[
+  'https://cdn.jsdelivr.net/gh/pararawendy/border-desa-indonesia-geojson@master/indonesia_villages_border.geojson.zip',
+  'https://raw.githubusercontent.com/pararawendy/border-desa-indonesia-geojson/master/indonesia_villages_border.geojson.zip'
+];
+
+// ── Indonesian ↔ GeoJSON name translation table ───────────────────────────────
+// GeoJSON uses English names (from Dukcapil), Excel uses Indonesian names.
+// This table maps every Indonesian variant → the English GeoJSON kabupaten value.
+var ID_TO_GEO = {
+  // Jakarta
+  'JAKARTA BARAT':        'West Jakarta',
+  'KOTA JAKARTA BARAT':   'West Jakarta',
+  'JAKARTA TIMUR':        'East Jakarta',
+  'KOTA JAKARTA TIMUR':   'East Jakarta',
+  'JAKARTA SELATAN':      'South Jakarta',
+  'KOTA JAKARTA SELATAN': 'South Jakarta',
+  'JAKARTA UTARA':        'North Jakarta',
+  'KOTA JAKARTA UTARA':   'North Jakarta',
+  'JAKARTA PUSAT':        'Central Jakarta',
+  'KOTA JAKARTA PUSAT':   'Central Jakarta',
+  // Tangerang
+  'KOTA TANGERANG':           'Tangerang',
+  'KOTA TANGERANG SELATAN':   'South Tangerang',
+  'TANGERANG SELATAN':        'South Tangerang',
+  'KABUPATEN TANGERANG':      'Tangerang',
+  'KAB TANGERANG':            'Tangerang',
+  'KAB. TANGERANG':           'Tangerang',
+  // Bogor
+  'KOTA BOGOR':       'Bogor',
+  'KABUPATEN BOGOR':  'Bogor',
+  'KAB BOGOR':        'Bogor',
+  'KAB. BOGOR':       'Bogor',
+  // Depok
+  'KOTA DEPOK':   'Depok',
+  'DEPOK':        'Depok',
+  // Bekasi
+  'KOTA BEKASI':      'Bekasi',
+  'KABUPATEN BEKASI': 'Bekasi',
+  'KAB BEKASI':       'Bekasi',
+  'KAB. BEKASI':      'Bekasi',
+  // Bandung
+  'KOTA BANDUNG':         'Bandung',
+  'KABUPATEN BANDUNG':    'Bandung',
+  'KABUPATEN BANDUNG BARAT': 'West Bandung',
+  'BANDUNG BARAT':        'West Bandung',
+  // Serang / Banten
+  'KOTA SERANG':      'Serang',
+  'KABUPATEN SERANG': 'Serang',
+  'KOTA CILEGON':     'Cilegon',
+  // Surabaya area
+  'KOTA SURABAYA':        'Surabaya',
+  'KABUPATEN GRESIK':     'Gresik',
+  'GRESIK':               'Gresik',
+  'KABUPATEN SIDOARJO':   'Sidoarjo',
+  'SIDOARJO':             'Sidoarjo',
+  // Semarang area
+  'KOTA SEMARANG':        'Semarang',
+  'KABUPATEN DEMAK':      'Demak',
+  'DEMAK':                'Demak',
+  // Medan area
+  'KOTA MEDAN':               'Medan',
+  'KABUPATEN DELI SERDANG':   'Deli Serdang',
+  'DELI SERDANG':             'Deli Serdang',
+  // Makassar area
+  'KOTA MAKASSAR':    'Makassar',
+  'KABUPATEN MAROS':  'Maros',
+  'MAROS':            'Maros',
+  // Yogyakarta
+  'KOTA YOGYAKARTA':  'Yogyakarta',
+  'YOGYAKARTA':       'Yogyakarta',
+  'JOGJA':            'Yogyakarta',
+  // Malang
+  'KOTA MALANG':      'Malang',
+  'KABUPATEN MALANG': 'Malang',
+  // Palembang
+  'KOTA PALEMBANG':   'Palembang',
+  // Pekanbaru
+  'KOTA PEKANBARU':   'Pekanbaru',
+  // Batam
+  'KOTA BATAM':       'Batam',
+  // Balikpapan
+  'KOTA BALIKPAPAN':  'Balikpapan',
+  // Samarinda
+  'KOTA SAMARINDA':   'Samarinda',
+  // Pontianak
+  'KOTA PONTIANAK':   'Pontianak',
+  // Denpasar/Bali
+  'KOTA DENPASAR':    'Denpasar',
+  'KABUPATEN BADUNG': 'Badung',
+  'KABUPATEN GIANYAR':'Gianyar',
+  // Manado
+  'KOTA MANADO':      'Manado',
+  // Kupang
+  'KOTA KUPANG':      'Kupang',
+  // Ambon
+  'KOTA AMBON':       'Ambon',
+  // Jayapura
+  'KOTA JAYAPURA':    'Jayapura',
+};
 
 var map,tileLayer,geojsonLayer,geoData;
 var currentTile='light',salesGroups=[],districtLookup={},hiddenGroups=new Set();
 
 // ── Normalisation ─────────────────────────────────────────────────────────────
+function norm(s){
+  return String(s).toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
+}
 function stripPrefix(s){
-  return String(s).replace(/^(KOTAMADYA|KOTA MADYA|KABUPATEN|KOTA|KAB\.|KAB)\s+/i,'').trim();
-}
-function cleanStr(s){
-  return stripPrefix(String(s)).toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
-}
-function variants(s){
-  var u=String(s).toUpperCase().trim();
-  return [u,stripPrefix(u),cleanStr(u),u.replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim()]
-    .filter(function(v,i,a){return v&&a.indexOf(v)===i;});
+  return norm(s).replace(/^(KOTAMADYA|KOTA MADYA|KABUPATEN|KOTA|KAB)\s+/,'').trim();
 }
 
-// ── Build lookup from Excel data ──────────────────────────────────────────────
+// Try to find the GeoJSON English kabupaten name for an Indonesian Excel name
+function toGeoName(excelName){
+  var u=norm(excelName);
+  // 1. Direct translation table lookup
+  if(ID_TO_GEO[u]) return ID_TO_GEO[u];
+  // 2. Try stripped (no prefix)
+  var stripped=stripPrefix(u);
+  if(ID_TO_GEO[stripped]) return ID_TO_GEO[stripped];
+  // 3. Try adding common prefixes to find in table
+  var withKota='KOTA '+stripped;
+  if(ID_TO_GEO[withKota]) return ID_TO_GEO[withKota];
+  var withKab='KABUPATEN '+stripped;
+  if(ID_TO_GEO[withKab]) return ID_TO_GEO[withKab];
+  // 4. No translation found — return original cleaned (might already be English)
+  return excelName;
+}
+
+// Build lookup: all variants of each area name → entry
 function buildLookup(groups){
   districtLookup={};
   groups.forEach(function(g){
     g.areas.forEach(function(area){
       var entry={salesperson:g.name,homebase:g.homebase,color:g.color,originalName:area,matched:false};
-      variants(area).forEach(function(v){if(v) districtLookup[v]=entry;});
+      var geoName=toGeoName(area);
+      var keys=[
+        norm(area), stripPrefix(norm(area)),
+        norm(geoName), stripPrefix(norm(geoName)),
+        geoName, geoName.toUpperCase()
+      ];
+      keys.forEach(function(k){if(k&&!districtLookup[k]) districtLookup[k]=entry;});
     });
   });
 }
 
-// ── Match a kabupaten name from GeoJSON → Excel entry ─────────────────────────
+// Match a kabupaten name from the GeoJSON feature
 function lookupKab(kabName){
   if(!kabName) return null;
-  var vs=variants(kabName);
-  for(var i=0;i<vs.length;i++){if(districtLookup[vs[i]]) return districtLookup[vs[i]];}
+  var u=norm(kabName);
+  if(districtLookup[u]) return districtLookup[u];
+  var s=stripPrefix(u);
+  if(districtLookup[s]) return districtLookup[s];
+  // Also try the raw value
+  if(districtLookup[kabName]) return districtLookup[kabName];
+  if(districtLookup[kabName.toUpperCase()]) return districtLookup[kabName.toUpperCase()];
   return null;
 }
 
@@ -253,51 +365,41 @@ function initMap(){
   tileLayer=L.tileLayer(TILES[currentTile].url,{attribution:ATTR,subdomains:TILES[currentTile].sub,maxZoom:19}).addTo(map);
 }
 
-// ── Fetch ZIP → unzip in browser → parse GeoJSON ─────────────────────────────
 function fetchGeoJSON(){
-  setLoading(true,'Mengunduh data wilayah (±30MB)...','Ini mungkin butuh ~30 detik pertama kali');
+  setLoading(true,'Mengunduh data wilayah (~30MB)...','Pertama kali membutuhkan ~30 detik');
   showProgress(0);
-
-  var urls=[GEO_ZIP_URL, GEO_ZIP_FALLBACK];
   var idx=0;
-
   function tryNext(){
-    if(idx>=urls.length){
+    if(idx>=GEO_URLS.length){
       setLoading(false);
-      document.getElementById('map-pill').innerHTML='<span style="color:#ef4444">Gagal mengunduh data GeoJSON.</span>';
+      document.getElementById('map-pill').innerHTML='<span style="color:#ef4444">Gagal mengunduh data. Cek koneksi internet.</span>';
       return;
     }
-    var url=urls[idx++];
+    var url=GEO_URLS[idx++];
     var xhr=new XMLHttpRequest();
     xhr.open('GET',url,true);
     xhr.responseType='arraybuffer';
-    xhr.onprogress=function(e){
-      if(e.lengthComputable) showProgress(Math.round(e.loaded/e.total*60));
-    };
+    xhr.onprogress=function(e){if(e.lengthComputable) showProgress(Math.round(e.loaded/e.total*60));};
     xhr.onload=function(){
       if(xhr.status!==200){tryNext();return;}
-      setLoading(true,'Mengekstrak file ZIP...','');
+      setLoading(true,'Mengekstrak ZIP...','');
       showProgress(65);
       JSZip.loadAsync(xhr.response).then(function(zip){
         var fname=Object.keys(zip.files).find(function(n){return n.endsWith('.geojson');});
         if(!fname){tryNext();return;}
         showProgress(75);
-        setLoading(true,'Memproses data GeoJSON (83k desa)...','');
+        setLoading(true,'Memproses GeoJSON (83k desa)...','');
         return zip.files[fname].async('string');
       }).then(function(txt){
         showProgress(90);
-        // Parse in chunks to avoid blocking UI
         setTimeout(function(){
           try{
             geoData=JSON.parse(txt);
             showProgress(100);
-            // geoData is village-level — each feature has properties:
-            // kabupaten, kecamatan, kelurahan, provinsi
-            // We colour by kabupaten
             setTimeout(function(){renderGeoJSON();},100);
           }catch(e){
             setLoading(false);
-            document.getElementById('map-pill').innerHTML='<span style="color:#ef4444">Gagal parse GeoJSON: '+e.message+'</span>';
+            document.getElementById('map-pill').innerHTML='<span style="color:#ef4444">Parse error: '+e.message+'</span>';
           }
         },50);
       }).catch(function(){tryNext();});
@@ -308,7 +410,11 @@ function fetchGeoJSON(){
   tryNext();
 }
 
-// ── Style: colour each village polygon by its kabupaten name ──────────────────
+// GeoJSON properties: kabupaten, kecamatan, kelurahan, provinsi (all in English from Dukcapil)
+function getKabName(props){
+  return props.kabupaten||props.district||props.kab_kota||null;
+}
+
 function styleFeature(feature){
   var kab=getKabName(feature.properties||{});
   var row=lookupKab(kab);
@@ -316,24 +422,19 @@ function styleFeature(feature){
   return{
     fillColor:(row&&!hidden)?row.color:'#cccccc',
     fillOpacity:(row&&!hidden)?TILES[currentTile].op:.06,
-    color:(row&&!hidden)?'#666':'#bbb',
-    weight:(row&&!hidden)?.5:.15
+    color:(row&&!hidden)?'#555':'#ccc',
+    weight:(row&&!hidden)?.5:.1
   };
 }
 
-// The pararawendy repo stores kabupaten in "kabupaten" or "district" property
-function getKabName(props){
-  return props.kabupaten||props.district||props.kab_kota||props.KABKOT||props.name||null;
-}
-
 function onEachFeature(feature,layer){
-  var kab=getKabName(feature.properties||{});
+  var props=feature.properties||{};
+  var kab=getKabName(props);
   var row=lookupKab(kab);
   if(row){
     row.matched=true;
-    var props=feature.properties||{};
     layer.bindPopup(
-      '<div class="popup-name">'+(props.kabupaten||kab)+'</div>'+
+      '<div class="popup-name">'+(props.kabupaten||kab||'')+'</div>'+
       '<div class="popup-row">Salesperson: <b>'+row.salesperson+'</b></div>'+
       (props.provinsi?'<div class="popup-row">Provinsi: <b>'+props.provinsi+'</b></div>':'')+
       (row.homebase?'<div class="popup-row" style="font-size:10px;color:#94a3b8">Homebase: '+row.homebase+'</div>':'')+
@@ -344,7 +445,7 @@ function onEachFeature(feature,layer){
   layer.on({
     mouseover:function(e){
       if(row&&hiddenGroups.has(row.salesperson)) return;
-      e.target.setStyle({weight:row?1.8:.3,color:'#111',fillOpacity:row?.90:.15});
+      e.target.setStyle({weight:row?1.8:.2,color:'#111',fillOpacity:row?.90:.12});
       if(!L.Browser.ie&&!L.Browser.opera&&!L.Browser.edge) e.target.bringToFront();
     },
     mouseout:function(e){geojsonLayer.resetStyle(e.target);}
@@ -352,8 +453,7 @@ function onEachFeature(feature,layer){
 }
 
 function renderGeoJSON(){
-  setLoading(true,'Merender peta (83k polygon)...','Sebentar lagi...');
-  // Use setTimeout to let loading UI render first
+  setLoading(true,'Merender peta...','');
   setTimeout(function(){
     if(geojsonLayer){map.removeLayer(geojsonLayer);geojsonLayer=null;}
     geojsonLayer=L.geoJSON(geoData,{style:styleFeature,onEachFeature:onEachFeature}).addTo(map);
@@ -363,7 +463,6 @@ function renderGeoJSON(){
   },100);
 }
 
-// ── Sidebar ───────────────────────────────────────────────────────────────────
 function updateSidebar(){
   var seen=new Set();
   var all=Object.values(districtLookup).filter(function(r){
@@ -432,9 +531,7 @@ function showProgress(pct){
   var pb=document.getElementById('prog-bar'); pb.classList.add('show');
   document.getElementById('prog-fill').style.width=pct+'%';
 }
-function hideProgress(){
-  document.getElementById('prog-bar').classList.remove('show');
-}
+function hideProgress(){ document.getElementById('prog-bar').classList.remove('show'); }
 
 document.getElementById('file-input').addEventListener('change',function(e){
   if(e.target.files[0]) parseExcel(e.target.files[0]); e.target.value='';
