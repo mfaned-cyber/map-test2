@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Territory Map — Indonesia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#0f1f3d;--navy2:#1a3260;--accent:#3b82f6;--accent2:#60a5fa;--surf:#fff;--surf2:#f4f6fb;--border:#e2e8f0;--text:#1e293b;--muted:#64748b;--success:#22c55e;--danger:#ef4444;--warn:#f59e0b;--r:10px}
+html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--surf2);color:var(--text)}
+#header{height:56px;background:var(--navy);display:flex;align-items:center;padding:0 20px;gap:14px;position:relative;z-index:1100;box-shadow:0 2px 12px rgba(0,0,0,.25)}
+#header-logo{width:32px;height:32px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#header h1{font-size:15px;font-weight:600;color:#fff;flex:1;letter-spacing:-.2px}
+#header-meta{font-size:11px;color:rgba(255,255,255,.45);font-family:'DM Mono',monospace;white-space:nowrap}
+#tile-btns{display:flex;gap:4px}
+.tbtn{font-size:11px;font-weight:500;padding:4px 11px;border-radius:6px;cursor:pointer;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.07);color:rgba(255,255,255,.7);transition:all .15s;font-family:'DM Sans',sans-serif}
+.tbtn:hover{background:rgba(255,255,255,.15);color:#fff}
+.tbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+#upload-btn{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;font-family:'DM Sans',sans-serif;padding:6px 14px;border-radius:7px;cursor:pointer;background:rgba(59,130,246,.18);border:1px solid rgba(59,130,246,.4);color:var(--accent2);transition:all .15s;white-space:nowrap}
+#upload-btn:hover{background:rgba(59,130,246,.30);color:#fff}
+#file-input{display:none}
+#main{display:flex;height:calc(100vh - 56px)}
+#sidebar{width:280px;flex-shrink:0;background:var(--surf);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+#sidebar-inner{flex:1;overflow-y:auto;padding:16px}
+.sid-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px}
+.sid-section{margin-bottom:20px}
+#stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat-card{background:var(--surf2);border-radius:var(--r);padding:10px 12px;border:1px solid var(--border)}
+.stat-card .val{font-size:22px;font-weight:600;color:var(--navy);line-height:1}
+.stat-card .lbl{font-size:10px;color:var(--muted);margin-top:3px}
+#legend-list{display:flex;flex-direction:column;gap:5px}
+.leg-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:all .12s}
+.leg-item:hover{background:var(--surf2);border-color:var(--border)}
+.leg-item.faded{opacity:.35}
+.leg-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.leg-name{flex:1;font-size:12px;font-weight:500}
+.leg-sub{font-size:10px;color:var(--muted)}
+.leg-count{font-size:10px;font-weight:600;background:var(--surf2);border:1px solid var(--border);border-radius:12px;padding:1px 7px;color:var(--muted)}
+#unmatched-box{background:#fffbeb;border:1px solid #fcd34d;border-radius:var(--r);padding:10px 12px;display:none}
+#unmatched-box .warn-title{font-size:11px;font-weight:600;color:#92400e;margin-bottom:5px}
+#unmatched-box ul{padding-left:14px}
+#unmatched-box li{font-size:11px;color:#78350f;margin:2px 0}
+#drop-zone{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:32px;border:2px dashed var(--border);border-radius:16px;margin:20px;background:var(--surf2);cursor:pointer;transition:all .15s}
+#drop-zone.drag-over{border-color:var(--accent);background:rgba(59,130,246,.04)}
+#drop-zone svg{opacity:.3}
+#drop-zone h2{font-size:15px;font-weight:500;color:var(--muted);text-align:center}
+#drop-zone p{font-size:12px;color:#94a3b8;text-align:center;line-height:1.6}
+#drop-zone-btn{font-size:13px;font-weight:500;font-family:'DM Sans',sans-serif;padding:9px 20px;border-radius:8px;cursor:pointer;background:var(--navy);color:#fff;border:none}
+#map-wrap{flex:1;position:relative;display:none}
+#map{width:100%;height:100%}
+#map-pill{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.96);backdrop-filter:blur(6px);border-radius:20px;padding:6px 18px;font-size:12px;color:var(--muted);box-shadow:0 2px 12px rgba(0,0,0,.14);z-index:800;white-space:nowrap;pointer-events:none;border:1px solid var(--border)}
+#map-pill b{color:var(--navy)}
+#loading{position:absolute;inset:0;background:rgba(244,246,251,.94);display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:900;font-size:13px;color:var(--muted)}
+#loading.show{display:flex}
+#loading-sub{font-size:11px;color:#94a3b8;font-family:'DM Mono',monospace;max-width:380px;text-align:center}
+.spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.progress-bar{width:260px;height:6px;background:var(--border);border-radius:3px;overflow:hidden;display:none}
+.progress-bar.show{display:block}
+.progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .3s}
+.leaflet-popup-content-wrapper{border-radius:10px!important;box-shadow:0 4px 24px rgba(15,31,61,.12)!important}
+.popup-name{font-weight:600;font-size:13px;color:var(--navy);margin-bottom:5px}
+.popup-row{font-size:11px;color:var(--muted);margin:2px 0}
+.popup-row b{color:var(--text)}
+.popup-badge{display:inline-block;margin-top:7px;border-radius:20px;padding:3px 12px;font-size:10px;font-weight:600;color:#fff}
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="header-logo">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+    </svg>
+  </div>
+  <h1>Sales Territory Map <span style="font-weight:300;opacity:.5">— Indonesia</span></h1>
+  <span id="header-meta">Kota / Kabupaten level</span>
+  <div id="tile-btns">
+    <button class="tbtn on" onclick="switchTile('light',this)">Light</button>
+    <button class="tbtn"    onclick="switchTile('dark',this)">Dark</button>
+    <button class="tbtn"    onclick="switchTile('osm',this)">OSM</button>
+  </div>
+  <button id="upload-btn" onclick="document.getElementById('file-input').click()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+    Upload Excel
+  </button>
+  <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div id="sidebar-inner">
+      <div class="sid-section">
+        <div class="sid-label">Ringkasan</div>
+        <div id="stat-grid">
+          <div class="stat-card"><div class="val" id="s-mapped">—</div><div class="lbl">Dipetakan</div></div>
+          <div class="stat-card"><div class="val" id="s-sales">—</div><div class="lbl">Salesperson</div></div>
+          <div class="stat-card"><div class="val" id="s-total">—</div><div class="lbl">Total area</div></div>
+          <div class="stat-card"><div class="val" id="s-miss">—</div><div class="lbl">Tidak cocok</div></div>
+        </div>
+      </div>
+      <div class="sid-section">
+        <div class="sid-label">Salesperson</div>
+        <div id="legend-list"></div>
+      </div>
+      <div class="sid-section">
+        <div id="unmatched-box">
+          <div class="warn-title">Wilayah tidak ditemukan</div>
+          <ul id="unmatched-list"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
+      <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+    </svg>
+    <h2>Upload file Excel wilayah sales</h2>
+    <p><strong>Nama</strong> | <strong>Homebase</strong> | <strong>Area Kerja 1</strong> ... <strong>Area Kerja N</strong></p>
+    <button id="drop-zone-btn">Pilih File Excel</button>
+    <p style="margin-top:4px;font-size:11px">atau drag &amp; drop file ke sini</p>
+  </div>
+
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div id="map-pill">Memuat peta...</div>
+    <div id="loading">
+      <div class="spinner"></div>
+      <span id="loading-msg">Memuat data...</span>
+      <div class="progress-bar" id="prog-bar"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+      <span id="loading-sub"></span>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+var TILES={
+  light:{url:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',sub:'abcd',op:.72},
+  dark: {url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', sub:'abcd',op:.82},
+  osm:  {url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',                sub:'abc', op:.65}
+};
+var ATTR='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>';
+var PALETTE=['#e6194b','#3cb44b','#4363d8','#f58231','#911eb4','#08b0a0','#f032e6','#9A6324','#0080ff','#e6ac00'];
+
+// GeoJSON source — pararawendy repo via jsdelivr (auto-serves from GitHub)
+// File is a ZIP, we unzip in browser using JSZip
+var GEO_ZIP_URL='https://cdn.jsdelivr.net/gh/pararawendy/border-desa-indonesia-geojson@master/indonesia_villages_border.geojson.zip';
+// Fallback: raw github
+var GEO_ZIP_FALLBACK='https://raw.githubusercontent.com/pararawendy/border-desa-indonesia-geojson/master/indonesia_villages_border.geojson.zip';
+
+var map,tileLayer,geojsonLayer,geoData;
+var currentTile='light',salesGroups=[],districtLookup={},hiddenGroups=new Set();
+
+// ── Normalisation ─────────────────────────────────────────────────────────────
+function stripPrefix(s){
+  return String(s).replace(/^(KOTAMADYA|KOTA MADYA|KABUPATEN|KOTA|KAB\.|KAB)\s+/i,'').trim();
+}
+function cleanStr(s){
+  return stripPrefix(String(s)).toUpperCase().replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
+}
+function variants(s){
+  var u=String(s).toUpperCase().trim();
+  return [u,stripPrefix(u),cleanStr(u),u.replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim()]
+    .filter(function(v,i,a){return v&&a.indexOf(v)===i;});
+}
+
+// ── Build lookup from Excel data ──────────────────────────────────────────────
+function buildLookup(groups){
+  districtLookup={};
+  groups.forEach(function(g){
+    g.areas.forEach(function(area){
+      var entry={salesperson:g.name,homebase:g.homebase,color:g.color,originalName:area,matched:false};
+      variants(area).forEach(function(v){if(v) districtLookup[v]=entry;});
+    });
+  });
+}
+
+// ── Match a kabupaten name from GeoJSON → Excel entry ─────────────────────────
+function lookupKab(kabName){
+  if(!kabName) return null;
+  var vs=variants(kabName);
+  for(var i=0;i<vs.length;i++){if(districtLookup[vs[i]]) return districtLookup[vs[i]];}
+  return null;
+}
+
+// ── Excel parsing ─────────────────────────────────────────────────────────────
+function parseExcel(file){
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var wb=XLSX.read(e.target.result,{type:'binary'});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      if(!rows.length){alert('Sheet kosong.');return;}
+      processData(rows);
+    }catch(err){alert('Gagal membaca: '+err.message);}
+  };
+  reader.readAsBinaryString(file);
+}
+
+function processData(rows){
+  var headers=Object.keys(rows[0]);
+  var nameCol=headers.find(function(h){return /^(nama|name|salesperson|sales|pic|staff)$/i.test(h.trim());})||headers[0];
+  var homeCol=headers.find(function(h){return /^(homebase|home.?base|domisili|base)$/i.test(h.trim());});
+  var areaCols=headers.filter(function(h){return /area.?kerja|area\s*\d|wilayah\s*\d|territory\s*\d/i.test(h);});
+  var singleCol=!areaCols.length?headers.find(function(h){return /^(wilayah|area|territory|district|kota|kabupaten)$/i.test(h.trim());}):null;
+
+  salesGroups=[];
+  if(areaCols.length){
+    rows.forEach(function(row,i){
+      var name=String(row[nameCol]||'').trim(); if(!name) return;
+      var areas=areaCols.map(function(c){return String(row[c]||'').trim();}).filter(Boolean);
+      if(areas.length) salesGroups.push({name:name,homebase:homeCol?String(row[homeCol]||'').trim():'',areas:areas,color:PALETTE[i%PALETTE.length]});
+    });
+  }else if(singleCol){
+    var grp={};
+    rows.forEach(function(row){
+      var name=String(row[nameCol]||'').trim(),area=String(row[singleCol]||'').trim();
+      if(!name||!area) return;
+      if(!grp[name]) grp[name]={name:name,homebase:homeCol?String(row[homeCol]||'').trim():'',areas:[]};
+      grp[name].areas.push(area);
+    });
+    Object.values(grp).forEach(function(g,i){salesGroups.push(Object.assign({},g,{color:PALETTE[i%PALETTE.length]}));});
+  }else{alert('Kolom area tidak ditemukan.');return;}
+  if(!salesGroups.length){alert('Tidak ada data.');return;}
+  buildLookup(salesGroups);
+  hiddenGroups.clear();
+  showMap();
+}
+
+// ── Map ───────────────────────────────────────────────────────────────────────
+function showMap(){
+  document.getElementById('drop-zone').style.display='none';
+  document.getElementById('map-wrap').style.display='block';
+  if(!map) initMap();
+  Object.values(districtLookup).forEach(function(e){e.matched=false;});
+  if(geoData) renderGeoJSON();
+  else fetchGeoJSON();
+}
+
+function initMap(){
+  map=L.map('map').setView([-6.2,106.8],9);
+  tileLayer=L.tileLayer(TILES[currentTile].url,{attribution:ATTR,subdomains:TILES[currentTile].sub,maxZoom:19}).addTo(map);
+}
+
+// ── Fetch ZIP → unzip in browser → parse GeoJSON ─────────────────────────────
+function fetchGeoJSON(){
+  setLoading(true,'Mengunduh data wilayah (±30MB)...','Ini mungkin butuh ~30 detik pertama kali');
+  showProgress(0);
+
+  var urls=[GEO_ZIP_URL, GEO_ZIP_FALLBACK];
+  var idx=0;
+
+  function tryNext(){
+    if(idx>=urls.length){
+      setLoading(false);
+      document.getElementById('map-pill').innerHTML='<span style="color:#ef4444">Gagal mengunduh data GeoJSON.</span>';
+      return;
+    }
+    var url=urls[idx++];
+    var xhr=new XMLHttpRequest();
+    xhr.open('GET',url,true);
+    xhr.responseType='arraybuffer';
+    xhr.onprogress=function(e){
+      if(e.lengthComputable) showProgress(Math.round(e.loaded/e.total*60));
+    };
+    xhr.onload=function(){
+      if(xhr.status!==200){tryNext();return;}
+      setLoading(true,'Mengekstrak file ZIP...','');
+      showProgress(65);
+      JSZip.loadAsync(xhr.response).then(function(zip){
+        var fname=Object.keys(zip.files).find(function(n){return n.endsWith('.geojson');});
+        if(!fname){tryNext();return;}
+        showProgress(75);
+        setLoading(true,'Memproses data GeoJSON (83k desa)...','');
+        return zip.files[fname].async('string');
+      }).then(function(txt){
+        showProgress(90);
+        // Parse in chunks to avoid blocking UI
+        setTimeout(function(){
+          try{
+            geoData=JSON.parse(txt);
+            showProgress(100);
+            // geoData is village-level — each feature has properties:
+            // kabupaten, kecamatan, kelurahan, provinsi
+            // We colour by kabupaten
+            setTimeout(function(){renderGeoJSON();},100);
+          }catch(e){
+            setLoading(false);
+            document.getElementById('map-pill').innerHTML='<span style="color:#ef4444">Gagal parse GeoJSON: '+e.message+'</span>';
+          }
+        },50);
+      }).catch(function(){tryNext();});
+    };
+    xhr.onerror=function(){tryNext();};
+    xhr.send();
+  }
+  tryNext();
+}
+
+// ── Style: colour each village polygon by its kabupaten name ──────────────────
+function styleFeature(feature){
+  var kab=getKabName(feature.properties||{});
+  var row=lookupKab(kab);
+  var hidden=row&&hiddenGroups.has(row.salesperson);
+  return{
+    fillColor:(row&&!hidden)?row.color:'#cccccc',
+    fillOpacity:(row&&!hidden)?TILES[currentTile].op:.06,
+    color:(row&&!hidden)?'#666':'#bbb',
+    weight:(row&&!hidden)?.5:.15
+  };
+}
+
+// The pararawendy repo stores kabupaten in "kabupaten" or "district" property
+function getKabName(props){
+  return props.kabupaten||props.district||props.kab_kota||props.KABKOT||props.name||null;
+}
+
+function onEachFeature(feature,layer){
+  var kab=getKabName(feature.properties||{});
+  var row=lookupKab(kab);
+  if(row){
+    row.matched=true;
+    var props=feature.properties||{};
+    layer.bindPopup(
+      '<div class="popup-name">'+(props.kabupaten||kab)+'</div>'+
+      '<div class="popup-row">Salesperson: <b>'+row.salesperson+'</b></div>'+
+      (props.provinsi?'<div class="popup-row">Provinsi: <b>'+props.provinsi+'</b></div>':'')+
+      (row.homebase?'<div class="popup-row" style="font-size:10px;color:#94a3b8">Homebase: '+row.homebase+'</div>':'')+
+      '<span class="popup-badge" style="background:'+row.color+'">'+row.salesperson+'</span>',
+      {maxWidth:240}
+    );
+  }
+  layer.on({
+    mouseover:function(e){
+      if(row&&hiddenGroups.has(row.salesperson)) return;
+      e.target.setStyle({weight:row?1.8:.3,color:'#111',fillOpacity:row?.90:.15});
+      if(!L.Browser.ie&&!L.Browser.opera&&!L.Browser.edge) e.target.bringToFront();
+    },
+    mouseout:function(e){geojsonLayer.resetStyle(e.target);}
+  });
+}
+
+function renderGeoJSON(){
+  setLoading(true,'Merender peta (83k polygon)...','Sebentar lagi...');
+  // Use setTimeout to let loading UI render first
+  setTimeout(function(){
+    if(geojsonLayer){map.removeLayer(geojsonLayer);geojsonLayer=null;}
+    geojsonLayer=L.geoJSON(geoData,{style:styleFeature,onEachFeature:onEachFeature}).addTo(map);
+    setLoading(false);
+    hideProgress();
+    updateSidebar();
+  },100);
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function updateSidebar(){
+  var seen=new Set();
+  var all=Object.values(districtLookup).filter(function(r){
+    var k=r.originalName+'|'+r.salesperson;
+    if(seen.has(k)) return false; seen.add(k); return true;
+  });
+  var matched=all.filter(function(r){return r.matched;});
+  var unmatched=all.filter(function(r){return !r.matched;});
+
+  document.getElementById('s-mapped').textContent=matched.length;
+  document.getElementById('s-sales').textContent=salesGroups.length;
+  document.getElementById('s-total').textContent=all.length;
+  var me=document.getElementById('s-miss');
+  me.textContent=unmatched.length;
+  me.style.color=unmatched.length>0?'var(--danger)':'var(--success)';
+
+  document.getElementById('map-pill').innerHTML=
+    '<b>'+matched.length+'</b> wilayah &nbsp;|&nbsp;'+
+    '<b>'+salesGroups.length+'</b> salesperson &nbsp;|&nbsp;'+
+    (unmatched.length>0?'<b style="color:#ef4444">'+unmatched.length+'</b> tidak cocok':'<b style="color:#22c55e">semua cocok ✓</b>');
+  document.getElementById('header-meta').textContent=matched.length+'/'+all.length+' wilayah';
+
+  var ll=document.getElementById('legend-list'); ll.innerHTML='';
+  salesGroups.forEach(function(g){
+    var d=document.createElement('div');
+    d.className='leg-item'+(hiddenGroups.has(g.name)?' faded':'');
+    d.innerHTML='<div class="leg-dot" style="background:'+g.color+'"></div>'+
+      '<div style="flex:1;min-width:0"><div class="leg-name">'+g.name+'</div>'+(g.homebase?'<div class="leg-sub">'+g.homebase+'</div>':'')+'</div>'+
+      '<span class="leg-count">'+g.areas.length+'</span>';
+    d.onclick=function(){toggleGroup(g.name);}; ll.appendChild(d);
+  });
+
+  var ub=document.getElementById('unmatched-box');
+  var ul=document.getElementById('unmatched-list'); ul.innerHTML='';
+  if(unmatched.length>0){
+    ub.style.display='block';
+    unmatched.forEach(function(r){
+      var li=document.createElement('li'); li.textContent=r.originalName+' ('+r.salesperson+')'; ul.appendChild(li);
+    });
+  }else{ub.style.display='none';}
+}
+
+function toggleGroup(name){
+  if(hiddenGroups.has(name)) hiddenGroups.delete(name); else hiddenGroups.add(name);
+  if(geojsonLayer) geojsonLayer.setStyle(styleFeature);
+  updateSidebar();
+}
+
+function switchTile(style,btn){
+  if(style===currentTile) return;
+  currentTile=style;
+  document.querySelectorAll('.tbtn').forEach(function(b){b.classList.remove('on');}); btn.classList.add('on');
+  if(!map) return;
+  map.removeLayer(tileLayer);
+  tileLayer=L.tileLayer(TILES[style].url,{attribution:ATTR,subdomains:TILES[style].sub,maxZoom:19}).addTo(map);
+  tileLayer.bringToBack();
+  if(geojsonLayer) geojsonLayer.setStyle(styleFeature);
+}
+
+function setLoading(show,msg,sub){
+  document.getElementById('loading').className=show?'show':'';
+  if(msg!==undefined) document.getElementById('loading-msg').textContent=msg;
+  if(sub!==undefined) document.getElementById('loading-sub').textContent=sub;
+}
+function showProgress(pct){
+  var pb=document.getElementById('prog-bar'); pb.classList.add('show');
+  document.getElementById('prog-fill').style.width=pct+'%';
+}
+function hideProgress(){
+  document.getElementById('prog-bar').classList.remove('show');
+}
+
+document.getElementById('file-input').addEventListener('change',function(e){
+  if(e.target.files[0]) parseExcel(e.target.files[0]); e.target.value='';
+});
+var dz=document.getElementById('drop-zone');
+dz.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',function(){dz.classList.remove('drag-over');});
+dz.addEventListener('drop',function(e){e.preventDefault();dz.classList.remove('drag-over');if(e.dataTransfer.files[0])parseExcel(e.dataTransfer.files[0]);});
+document.getElementById('map-wrap').addEventListener('dragover',function(e){e.preventDefault();});
+document.getElementById('map-wrap').addEventListener('drop',function(e){e.preventDefault();if(e.dataTransfer.files[0])parseExcel(e.dataTransfer.files[0]);});
+</script>
+</body>
+</html>
